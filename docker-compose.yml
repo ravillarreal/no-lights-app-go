@@ -1,0 +1,63 @@
+services:
+
+  redis_db:
+    image: redis:7-alpine
+    container_name: nolights_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres_db:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: nolights_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nolights
+      POSTGRES_USER: ${POSTGRES_USER:-nolights}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nolights_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nolights} -d nolights"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    container_name: nolights_api
+    restart: unless-stopped
+    command: ["api"]
+    depends_on:
+      redis_db:
+        condition: service_healthy
+      postgres_db:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis_db
+      REDIS_PORT: "6379"
+      SEARCH_RADIUS_KM: ${SEARCH_RADIUS_KM:-0.5}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nolights}:${POSTGRES_PASSWORD:-nolights_secret}@postgres_db:5432/nolights
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+    ports:
+      - "8000:8000"
+
+  bot:
+    build: .
+    container_name: nolights_bot
+    restart: unless-stopped
+    command: ["bot"]
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nolights}:${POSTGRES_PASSWORD:-nolights_secret}@postgres_db:5432/nolights
+
+volumes:
+  postgres_data:

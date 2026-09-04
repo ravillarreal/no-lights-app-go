@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 0'  # load test every Sunday 03:00 UTC
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+        ports: ["6379:6379"]
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_DB: nolights
+          POSTGRES_USER: nolights
+          POSTGRES_PASSWORD: nolights_secret
+        options: >-
+          --health-cmd "pg_isready -U nolights -d nolights"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports: ["5432:5432"]
+        volumes:
+          - ${{ github.workspace }}/migrations:/docker-entrypoint-initdb.d:ro
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Format check (gofmt)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (race detector)
+        env:
+          REDIS_HOST: localhost
+          REDIS_PORT: "6379"
+          DATABASE_URL: postgresql://nolights:nolights_secret@localhost:5432/nolights
+        run: go test -race ./...
+
+  load-test:
+    # Non-deterministic by nature: run manually or on the weekly schedule.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+        ports: ["6379:6379"]
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_DB: nolights
+          POSTGRES_USER: nolights
+          POSTGRES_PASSWORD: nolights_secret
+        options: >-
+          --health-cmd "pg_isready -U nolights -d nolights"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports: ["5432:5432"]
+        volumes:
+          - ${{ github.workspace }}/migrations:/docker-entrypoint-initdb.d:ro
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Start API
+        env:
+          REDIS_HOST: localhost
+          REDIS_PORT: "6379"
+          DATABASE_URL: postgresql://nolights:nolights_secret@localhost:5432/nolights
+        run: |
+          go build -o /tmp/api ./cmd/api
+          nohup /tmp/api > /tmp/api.log 2>&1 &
+          sleep 5
+          curl --fail http://localhost:8000/api/stats/summary
+
+      - name: Install k6
+        run: |
+          curl -sL https://github.com/grafana/k6/releases/download/v0.49.0/k6-v0.49.0-linux-amd64.tar.gz | tar xz --strip-components=1 -C /usr/local/bin
+
+      - name: Run k6 load test
+        run: k6 run k6/load.js -e BASE_URL=http://localhost:8000

@@ -1,0 +1,15 @@
+# Binarios
+/api
+/bot
+*.exe
+
+# Go
+vendor/
+
+# Entorno
+.env
+
+# Artefactos de test / cobertura
+*.out
+coverage/
+k6-summary.json

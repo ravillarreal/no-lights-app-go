@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>No Lights — Mapa</title>
+  <link href="/static/style.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="fab" id="report-btn" title="Reportar corte / restauración">⚡</div>
+  <div class="status-pill" id="status">Consultando cortes cercanos…</div>
+
+  <nav class="topbar">
+    <a href="/mapa">Mapa</a>
+    <a href="/dashboard">Dashboard</a>
+  </nav>
+
+  <script>
+    window.NOLIGHTS = { mapboxToken: "{{.MapboxToken}}", radiusKM: {{.RadiusKM}} };
+  </script>
+  <script src="/static/map.js"></script>
+</body>
+</html>
